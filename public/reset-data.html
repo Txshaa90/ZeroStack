@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reset ZeroStack Data</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #059669;
+        }
+        .danger {
+            background: #ef4444;
+        }
+        .danger:hover {
+            background: #dc2626;
+        }
+        .info {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            color: #374151;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Reset ZeroStack Data</h1>
+        
+        <div class="info">
+            <strong>Current Status:</strong>
+            <div id="status">Checking...</div>
+        </div>
+
+        <div class="success" id="success">
+            ✅ Data reset successfully! Redirecting to dashboard...
+        </div>
+
+        <button onclick="clearAndReload()">Clear Cache & Reload</button>
+        <button onclick="goToDashboard()">Go to Dashboard</button>
+        
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+            <h3>What this does:</h3>
+            <ul>
+                <li>Clears all localStorage data</li>
+                <li>Reloads the page to load fresh sample data</li>
+                <li>Shows all 3 folders with 9 datasets</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function checkStatus() {
+            const storage = localStorage.getItem('zerostack-storage');
+            const statusDiv = document.getElementById('status');
+            
+            if (storage) {
+                try {
+                    const data = JSON.parse(storage);
+                    const tables = data.state?.tables || [];
+                    const folders = data.state?.folders || [];
+                    statusDiv.innerHTML = `
+                        <div style="margin-top: 10px;">
+                            📊 ${tables.length} datasets<br>
+                            📁 ${folders.length} folders
+                        </div>
+                    `;
+                } catch (e) {
+                    statusDiv.textContent = 'Error reading data';
+                }
+            } else {
+                statusDiv.textContent = 'No data found (will load defaults on next page load)';
+            }
+        }
+
+        function clearAndReload() {
+            localStorage.clear();
+            document.getElementById('success').style.display = 'block';
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1500);
+        }
+
+        function goToDashboard() {
+            window.location.href = '/dashboard';
+        }
+
+        // Check status on load
+        checkStatus();
+    </script>
+</body>
+</html>
