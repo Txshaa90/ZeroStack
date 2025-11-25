@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useTableStore } from '@/store/useTableStore'
 import { useViewStore } from '@/store/useViewStore'
@@ -36,7 +36,6 @@ export default function DatasetWorkspacePage() {
   const { tables } = useTableStore()
   const { getViewsByTable, setActiveView } = useViewStore()
   
-  const [mounted, setMounted] = useState(false)
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [supabaseDataset, setSupabaseDataset] = useState<any>(null)
@@ -54,6 +53,9 @@ export default function DatasetWorkspacePage() {
   const [showAllRows, setShowAllRows] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
   const [rowHeight, setRowHeight] = useState<'compact' | 'comfortable'>('comfortable')
+  const [scrollLeft, setScrollLeft] = useState(0)
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   
   const baseDataset = supabaseDataset || tables.find(t => t.id === datasetId)
   const currentDataset = baseDataset ? {
@@ -66,12 +68,9 @@ export default function DatasetWorkspacePage() {
   const currentSheet = datasetSheets.find(s => s.id === activeSheetId) || datasetSheets[0]
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
     async function fetchData() {
       if (!datasetId) return
+      setLoading(true)
       try {
         const { data: datasetData, error: datasetError } = await supabase
           .from('tables')
@@ -99,21 +98,16 @@ export default function DatasetWorkspacePage() {
         setLoading(false)
       }
     }
-    if (mounted) fetchData()
-  }, [mounted, datasetId])
+    fetchData()
+  }, [datasetId])
 
-  useEffect(() => {
-    if (datasetSheets.length > 0 && !activeSheetId) {
-      setActiveSheetId(datasetSheets[0].id)
-      setActiveView(datasetSheets[0].id)
-    }
-  }, [datasetSheets])
+  // Removed redundant effect - activeSheetId is now set in fetchData
 
   useEffect(() => {
     if (activeSheetId) setActiveView(activeSheetId)
   }, [activeSheetId])
 
-  if (!mounted) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <Database className="h-16 w-16 opacity-20 animate-pulse" />
@@ -140,6 +134,25 @@ export default function DatasetWorkspacePage() {
 
   const userId = '0aebc03e-defa-465d-ac65-b6c15806fd26'
 
+  // Helper function to update Supabase views
+  const updateSupabaseView = (viewId: string, updates: any) => {
+    setSupabaseViews(views => views.map(v => v.id === viewId ? { ...v, ...updates } : v))
+  }
+
+  // Sheet icon mapping
+  const sheetIconMap: Record<string, any> = {
+    chart: BarChart3,
+    gallery: LayoutGrid,
+    form: FileText,
+    kanban: Columns,
+    default: Grid3x3
+  }
+
+  const getSheetIcon = (type: string) => {
+    const Icon = sheetIconMap[type] || sheetIconMap.default
+    return <Icon className="h-4 w-4" />
+  }
+
   const handleAddRow = async () => {
     if (!currentDataset || !currentSheet) return
     const newRow: any = { id: crypto.randomUUID() }
@@ -147,7 +160,7 @@ export default function DatasetWorkspacePage() {
     const updatedRows = [...(currentSheet.rows || []), newRow]
     try {
       await supabase.from('views').update({ rows: updatedRows }).eq('id', currentSheet.id)
-      setSupabaseViews(supabaseViews.map(v => v.id === currentSheet.id ? { ...v, rows: updatedRows } : v))
+      updateSupabaseView(currentSheet.id, { rows: updatedRows })
     } catch (error) {
       console.error('Error adding row:', error)
     }
@@ -158,7 +171,7 @@ export default function DatasetWorkspacePage() {
     const updatedRows = (currentSheet.rows || []).filter((r: any) => r.id !== rowId)
     try {
       await supabase.from('views').update({ rows: updatedRows }).eq('id', currentSheet.id)
-      setSupabaseViews(supabaseViews.map(v => v.id === currentSheet.id ? { ...v, rows: updatedRows } : v))
+      updateSupabaseView(currentSheet.id, { rows: updatedRows })
     } catch (error) {
       console.error('Error deleting row:', error)
     }
@@ -169,7 +182,7 @@ export default function DatasetWorkspacePage() {
     const updatedRows = (currentSheet.rows || []).map((r: any) => r.id === rowId ? { ...r, [columnId]: value } : r)
     try {
       await supabase.from('views').update({ rows: updatedRows }).eq('id', currentSheet.id)
-      setSupabaseViews(supabaseViews.map(v => v.id === currentSheet.id ? { ...v, rows: updatedRows } : v))
+      updateSupabaseView(currentSheet.id, { rows: updatedRows })
     } catch (error) {
       console.error('Error updating cell:', error)
     }
@@ -375,14 +388,6 @@ export default function DatasetWorkspacePage() {
   const cellPaddingClass = rowHeight === 'compact' ? 'py-1' : 'py-3'
   const inputHeightClass = rowHeight === 'compact' ? 'h-7' : 'h-8'
 
-  const getSheetIcon = (type: string) => {
-    if (type === 'chart') return <BarChart3 className="h-4 w-4" />
-    if (type === 'gallery') return <LayoutGrid className="h-4 w-4" />
-    if (type === 'form') return <FileText className="h-4 w-4" />
-    if (type === 'kanban') return <Columns className="h-4 w-4" />
-    return <Grid3x3 className="h-4 w-4" />
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 h-14 flex items-center px-4 justify-between">
@@ -507,32 +512,36 @@ export default function DatasetWorkspacePage() {
               />
             </div>
           ) : (
-            <div className="flex-1 p-4 flex flex-col">
-              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
-                <div 
-                  className="flex-1 overflow-auto"
-                >
-                  <table className="w-full border-separate border-spacing-0" style={{ width: 'max-content', minWidth: '100%' }}>
-                    <thead className="sticky top-0 bg-white dark:bg-gray-800 z-20 shadow-sm">
+            <div className="flex-1 flex flex-col overflow-hidden relative">
+              <div 
+                className="flex-1 overflow-auto"
+                ref={scrollContainerRef}
+                onScroll={(e) => {
+                  const target = e.target as HTMLDivElement
+                  setScrollLeft(target.scrollLeft)
+                }}
+              >
+                <table className="border-separate border-spacing-0" style={{ minWidth: '100%', width: 'max-content' }}>
+                    <thead className="bg-white dark:bg-gray-800 z-20">
                       <tr>
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" style={{ width: '60px', minWidth: '60px' }}>#</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase sticky left-0 top-0 z-30 bg-white dark:bg-gray-800 shadow-sm" style={{ width: '60px', minWidth: '60px' }}>#</th>
                         {visibleColumns.map((column: any) => (
-                          <th key={column.id} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap" style={{ minWidth: '200px', maxWidth: '300px' }}>
+                          <th key={column.id} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase whitespace-nowrap sticky top-0 z-20 bg-white dark:bg-gray-800 shadow-sm" style={{ minWidth: '250px' }}>
                             {column.name}
                           </th>
                         ))}
-                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase" style={{ width: '100px', minWidth: '100px' }}>Actions</th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase sticky top-0 z-20 bg-white dark:bg-gray-800 shadow-sm" style={{ width: '100px', minWidth: '100px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                       {Object.entries(displayRowsWithColor).map(([group, { rows }]) =>
                         rows.map((row: any, index: number) => (
-                          <tr key={row.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${rowPaddingClass}`}>
-                            <td className={`px-4 ${cellPaddingClass} text-center text-sm text-gray-500 dark:text-gray-400 font-medium`} style={{ width: '60px', minWidth: '60px' }}>
-                              {index + 1}
+                          <tr key={row.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${rowPaddingClass}`} style={{ backgroundColor: row.rowColor }}>
+                            <td className={`px-4 ${cellPaddingClass} text-center text-sm text-gray-500 dark:text-gray-400 font-medium sticky left-0 z-10 bg-white dark:bg-gray-800`} style={{ width: '60px', minWidth: '60px' }}>
+                              {(currentPage - 1) * rowsPerPage + index + 1}
                             </td>
                             {visibleColumns.map((column: any) => (
-                              <td key={column.id} className={`px-4 ${cellPaddingClass}`} style={{ minWidth: '200px', maxWidth: '300px' }}>
+                              <td key={column.id} className={`px-4 ${cellPaddingClass}`} style={{ minWidth: '250px' }}>
                                 <Input
                                   type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text'}
                                   value={row[column.id] || ''}
@@ -550,17 +559,41 @@ export default function DatasetWorkspacePage() {
                         ))
                       )}
                     </tbody>
-                  </table>
-                </div>
-                
-                {/* Total row count - Google Sheets style */}
-                <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400">
-                  {totalRows.toLocaleString()} {totalRows === 1 ? 'row' : 'rows'} total
-                </div>
+                </table>
+              </div>
+
+              {/* Synced horizontal scrollbar - always visible at bottom */}
+              <div 
+                className="sticky bottom-0 left-0 right-0 overflow-x-auto bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-600"
+                style={{ 
+                  scrollbarWidth: 'thin',
+                  WebkitOverflowScrolling: 'touch'
+                }}
+                onScroll={(e) => {
+                  const target = e.target as HTMLDivElement
+                  if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollLeft = target.scrollLeft
+                  }
+                }}
+                ref={(el) => {
+                  if (el && scrollContainerRef.current) {
+                    el.scrollLeft = scrollLeft
+                  }
+                }}
+              >
+                <div style={{ 
+                  width: `${60 + (visibleColumns.length * 250) + 100}px`,
+                  height: '1px'
+                }} />
+              </div>
+              
+              {/* Total row count - Google Sheets style */}
+              <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400">
+                {totalRows.toLocaleString()} {totalRows === 1 ? 'row' : 'rows'} total
               </div>
 
               {!showAllRows && totalPages > 1 && (
-                  <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 flex items-center justify-between">
+                <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-600 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                         <input type="checkbox" checked={showAllRows} onChange={(e) => { setShowAllRows(e.target.checked); if (!e.target.checked) setCurrentPage(1) }} className="rounded" />
@@ -584,8 +617,8 @@ export default function DatasetWorkspacePage() {
                         Next
                       </Button>
                     </div>
-                  </div>
-                )}
+                </div>
+              )}
             </div>
           )}
         </main>
